@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  memkit:
+    build: .  # Full server wired in M3
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./chroma_data:/app/chroma_data
+    restart: unless-stopped
