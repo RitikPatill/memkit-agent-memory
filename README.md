@@ -16,22 +16,23 @@ Most agent tutorials either skip memory entirely or offload it to Pinecone or We
 
 ## Status
 
-**M2 — core memory engine complete.**
+**M3 — FastAPI REST server complete.**
 
 | Item | Details |
 |------|---------|
-| Package layout | `src/memkit/` with `__init__.py`, `config.py`, and `store.py` |
+| Package layout | `src/memkit/` with `__init__.py`, `config.py`, `store.py`, `server.py` |
 | `MemoryStore` | `add`, `search`, `list`, `delete` — fully functional |
 | Embedding | `all-MiniLM-L6-v2` via `sentence-transformers`, CPU-only |
 | Storage | ChromaDB with file-system persistence (`./chroma_data/`) |
 | Front-matter parsing | `python-frontmatter` — YAML metadata extracted automatically |
-| Test suite | `tests/test_store.py` — 5 tests covering all four methods |
+| REST API | FastAPI server with 5 endpoints; lifespan hook initialises the store |
+| Test suite | `tests/test_store.py` + `tests/test_server.py` — full coverage |
 | Dependency manifest | `requirements.txt` with all runtime deps pinned |
 | Build config | `pyproject.toml` declaring the `memkit` entry-point (wired in M4) |
-| Docker stub | `docker-compose.yml` + `Dockerfile` — server is not yet wired; see M3 |
+| Docker | `docker-compose.yml` + `Dockerfile` — `docker compose up` starts the server |
 | License | MIT (`LICENSE`) |
 
-The REST server and CLI are implemented in M3–M4 respectively. See the [Roadmap](#roadmap).
+The CLI is implemented in M4. See the [Roadmap](#roadmap).
 
 ### Using `MemoryStore` directly
 
@@ -98,8 +99,6 @@ store.delete(results[0]["id"])
 
 ## Quick Start
 
-> **Not yet functional.** The server is wired in M3. The commands below reflect the intended end-state.
-
 ```bash
 # 1. Start the server
 docker compose up
@@ -107,7 +106,7 @@ docker compose up
 # 2. Store a memory
 curl -X POST http://localhost:8000/memories \
   -H "Content-Type: application/json" \
-  -d '{"content": "User prefers concise answers."}'
+  -d '{"text": "User prefers concise answers."}'
 
 # 3. Retrieve semantically similar memories
 curl "http://localhost:8000/memories/search?q=how+should+I+respond&k=3"
@@ -117,14 +116,13 @@ curl "http://localhost:8000/memories/search?q=how+should+I+respond&k=3"
 
 ## API Endpoints
 
-> **Not yet functional.** The FastAPI server ships in M3.
-
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/memories` | Store a new memory snippet |
+| `GET` | `/healthz` | Health check — returns `{"status": "ok"}` |
+| `POST` | `/memories` | Store a new memory snippet (returns `201`) |
 | `GET` | `/memories/search?q=...&k=5` | Semantic top-k retrieval |
 | `GET` | `/memories` | List all memories with metadata |
-| `DELETE` | `/memories/{id}` | Remove a memory by ID |
+| `DELETE` | `/memories/{memory_id}` | Remove a memory by ID (returns `204`) |
 
 ---
 
@@ -173,7 +171,7 @@ User prefers bullet-point answers over long paragraphs.
 |-----------|-----------|
 | **M1** ✓ | Scaffold, README, package layout |
 | **M2** ✓ | `MemoryStore`: embed, store, search, list, delete + unit tests |
-| **M3** (next) | FastAPI server, Docker image |
+| **M3** ✓ | FastAPI server (`server.py`), 5 endpoints, Docker image |
 | **M4** | CLI (`memkit add/search/list`) |
 | **M5** | Python client class + chatbot integration example |
 
