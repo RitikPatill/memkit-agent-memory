@@ -16,18 +16,51 @@ Most agent tutorials either skip memory entirely or offload it to Pinecone or We
 
 ## Status
 
-**M1 — scaffold complete.** The following are in place; nothing beyond this list is functional yet.
+**M2 — core memory engine complete.**
 
 | Item | Details |
 |------|---------|
-| Package layout | `src/memkit/` with `__init__.py` and `config.py` |
-| Dependency manifest | `requirements.txt` with pinned versions of FastAPI, Uvicorn, sentence-transformers, ChromaDB, python-frontmatter, Typer, Pydantic |
+| Package layout | `src/memkit/` with `__init__.py`, `config.py`, and `store.py` |
+| `MemoryStore` | `add`, `search`, `list`, `delete` — fully functional |
+| Embedding | `all-MiniLM-L6-v2` via `sentence-transformers`, CPU-only |
+| Storage | ChromaDB with file-system persistence (`./chroma_data/`) |
+| Front-matter parsing | `python-frontmatter` — YAML metadata extracted automatically |
+| Test suite | `tests/test_store.py` — 5 tests covering all four methods |
+| Dependency manifest | `requirements.txt` with all runtime deps pinned |
 | Build config | `pyproject.toml` declaring the `memkit` entry-point (wired in M4) |
 | Docker stub | `docker-compose.yml` + `Dockerfile` — server is not yet wired; see M3 |
-| Test harness | `tests/test_scaffold.py` verifying package import and layout |
 | License | MIT (`LICENSE`) |
 
-Embedding, storage, the REST server, and the CLI are implemented in M2–M4 respectively. See the [Roadmap](#roadmap).
+The REST server and CLI are implemented in M3–M4 respectively. See the [Roadmap](#roadmap).
+
+### Using `MemoryStore` directly
+
+```python
+from memkit import MemoryStore
+
+store = MemoryStore()  # persists to ./chroma_data/ by default
+
+# Store a plain memory
+store.add("The user prefers concise answers.")
+
+# Store a memory with YAML front-matter
+store.add("""---
+tags: [preference, tone]
+source: conversation
+---
+User prefers bullet-point answers over long paragraphs.""")
+
+# Semantic search
+results = store.search("how should I format responses?", k=3)
+for r in results:
+    print(r["score"], r["text"])
+
+# List all
+all_memories = store.list()
+
+# Delete by ID
+store.delete(results[0]["id"])
+```
 
 ---
 
@@ -138,9 +171,9 @@ User prefers bullet-point answers over long paragraphs.
 
 | Milestone | What ships |
 |-----------|-----------|
-| **M1** (now) | Scaffold, README, package layout |
-| **M2** | Embedding + ChromaDB core (`store`, `search`) |
-| **M3** | FastAPI server, Docker image |
+| **M1** ✓ | Scaffold, README, package layout |
+| **M2** ✓ | `MemoryStore`: embed, store, search, list, delete + unit tests |
+| **M3** (next) | FastAPI server, Docker image |
 | **M4** | CLI (`memkit add/search/list`) |
 | **M5** | Python client class + chatbot integration example |
 
