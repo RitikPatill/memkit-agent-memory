@@ -1,233 +1,108 @@
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue) ![License MIT](https://img.shields.io/badge/license-MIT-green)
 
-# MemKit
+# MemKit — Markdown-Native Agent Memory Store
 
-**Self-hosted memory backend for LLM agents — no cloud account required.**
+> A local-first semantic memory layer for LLM agents: store and retrieve Markdown memories via REST API, no cloud required.
 
-Give your agent persistent, semantic memory in one command. MemKit stores Markdown snippets locally, embeds them with a CPU-friendly model, and serves them over a clean REST API that any framework can call.
+![demo](demo/demo.gif)
 
----
+## What it is
 
-## Why MemKit
+MemKit is a self-hosted memory backend for LLM agents and AI pipelines. It solves a universal pain point: agents that forget everything between sessions, or that depend on paid external vector stores. Memories are plain Markdown snippets, optionally annotated with YAML front-matter (`tags`, `source`, `created_at`). MemKit embeds them locally using `sentence-transformers` (CPU-friendly, no API key needed) and persists vectors in ChromaDB on disk.
 
-Most agent tutorials either skip memory entirely or offload it to Pinecone or Weaviate. Developers prototyping locally shouldn't need a cloud account and a credit card to give their agent a memory. MemKit runs with one command and survives process restarts.
+A FastAPI server exposes a clean REST API so any agent framework — LangChain, LlamaIndex, raw HTTP calls — can read and write memories with zero extra dependencies. A Typer CLI and a Python client class are included for direct use. The server survives process restarts; there is no external database process to manage.
 
----
+## Quickstart
 
-## Status
+```bash
+git clone https://github.com/RitikPatill/memkit-agent-memory.git
+cd memkit-agent-memory
+pip install -r requirements.txt
+pip install -e .
 
-**M4 — CLI + Python client complete.**
-
-| Item | Details |
-|------|---------|
-| Package layout | `src/memkit/` with `__init__.py`, `config.py`, `store.py`, `server.py`, `client.py`, `cli.py` |
-| `MemoryStore` | `add`, `search`, `list`, `delete` — fully functional |
-| `MemKitClient` | Synchronous Python client wrapping all four REST endpoints via `httpx` |
-| CLI | `memkit add/search/list` — Typer app, supports `MEMKIT_URL` env var |
-| Embedding | `all-MiniLM-L6-v2` via `sentence-transformers`, CPU-only |
-| Storage | ChromaDB with file-system persistence (`./chroma_data/`) |
-| Front-matter parsing | `python-frontmatter` — YAML metadata extracted automatically |
-| REST API | FastAPI server with 5 endpoints; lifespan hook initialises the store |
-| Test suite | `tests/test_store.py` + `tests/test_server.py` + `tests/test_client.py` + `tests/test_cli.py` |
-| Dependency manifest | `requirements.txt` with all runtime deps pinned |
-| Build config | `pyproject.toml` declaring the `memkit` entry-point |
-| Docker | `docker-compose.yml` + `Dockerfile` — `docker compose up` starts the server |
-| Chatbot example | `examples/chatbot.py` — memory-augmented chat via Anthropic API |
-| License | MIT (`LICENSE`) |
-
-### Using `MemoryStore` directly
-
-```python
-from memkit import MemoryStore
-
-store = MemoryStore()  # persists to ./chroma_data/ by default
-
-# Store a plain memory
-store.add("The user prefers concise answers.")
-
-# Store a memory with YAML front-matter
-store.add("""---
-tags: [preference, tone]
-source: conversation
----
-User prefers bullet-point answers over long paragraphs.""")
-
-# Semantic search
-results = store.search("how should I format responses?", k=3)
-for r in results:
-    print(r["score"], r["text"])
-
-# List all
-all_memories = store.list()
-
-# Delete by ID
-store.delete(results[0]["id"])
+# Start the server (choose one)
+docker compose up                          # recommended
+uvicorn memkit.server:app --reload         # without Docker
 ```
 
----
+The server starts on `http://localhost:8000`. The first run downloads the `all-MiniLM-L6-v2` model (~80 MB).
+
+## Usage
+
+Store a memory and retrieve it semantically using the CLI:
+
+```bash
+memkit add "The user prefers concise, bullet-point answers."
+memkit add path/to/notes.md          # Markdown file with optional YAML front-matter
+memkit search "how should I format responses" --k 3
+memkit list
+```
+
+The same operations are available over HTTP:
+
+```bash
+curl -s -X POST http://localhost:8000/memories \
+     -H "Content-Type: application/json" \
+     -d '{"text": "The user prefers concise answers."}'
+
+curl -s "http://localhost:8000/memories/search?q=how+should+I+respond&k=3"
+```
+
+`examples/chatbot.py` shows a complete integration: it retrieves the top-3 relevant memories on each turn and injects them as a system prompt before calling the Anthropic API.
+
+```bash
+ANTHROPIC_API_KEY=sk-... python examples/chatbot.py
+```
 
 ## Architecture
 
 ```
- ┌────────────────────────────────────────────┐
- │  Access Layer                               │
- │  memkit CLI  │  MemKitClient  │  HTTP/curl  │
- └─────────────────────┬──────────────────────┘
-                       │  HTTP (REST)
-                       ▼
- ┌─────────────────────────────┐
- │        FastAPI Server        │
- │  POST /memories              │
- │  GET  /memories/search?q=…   │
- │  GET  /memories              │
- │  DELETE /memories/{id}       │
- └────────────┬────────────────┘
-              │
-              ▼
- ┌─────────────────────────────┐
- │   sentence-transformers      │
- │   all-MiniLM-L6-v2 (CPU)    │
- │   ~80 MB, no API key         │
- └────────────┬────────────────┘
-              │  embeddings
-              ▼
- ┌─────────────────────────────┐
- │   ChromaDB (disk)            │
- │   ./chroma_data/             │
- │   persists across restarts   │
- └─────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  CLI (memkit add / search / list)                │
+│  MemKitClient  (Python, httpx)                   │
+│  Raw HTTP caller (curl, any agent framework)     │
+│           │                                      │
+│           ▼                                      │
+│     FastAPI server  :8000                        │
+│           │                                      │
+│           ▼                                      │
+│      MemoryStore                                 │
+│      ├── sentence-transformers                   │
+│      │   (all-MiniLM-L6-v2, 384-dim, CPU)       │
+│      └── ChromaDB  (./chroma_data/, disk)        │
+└──────────────────────────────────────────────────┘
 ```
 
----
+## Project structure
 
-## Quick Start
-
-```bash
-# 1. Install the package and start the server
-pip install -e .
-docker compose up          # or: uvicorn memkit.server:app --reload
-
-# 2. Store a memory
-memkit add "User prefers concise answers."
-
-# 3. Retrieve semantically similar memories
-memkit search "how should I respond" --k 3
 ```
-
-Raw HTTP also works against the same server — see [API Endpoints](#api-endpoints).
-
----
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/healthz` | Health check — returns `{"status": "ok"}` |
-| `POST` | `/memories` | Store a new memory snippet (returns `201`) |
-| `GET` | `/memories/search?q=...&k=5` | Semantic top-k retrieval |
-| `GET` | `/memories` | List all memories with metadata |
-| `DELETE` | `/memories/{memory_id}` | Remove a memory by ID (returns `204`) |
-
----
-
-## CLI Usage
-
-```bash
-pip install -e .
-
-# Start the server first (or use docker compose up)
-# Then use the CLI:
-memkit add "The user's name is Alice."
-memkit add path/to/memory.md           # read from file
-memkit search "what is the user's name"
-memkit list
-
-# Point at a non-default server
-MEMKIT_URL=http://myserver:8000 memkit list
+memkit-agent-memory/
+├── src/memkit/          Core package: store, server, client, cli, config
+├── tests/               pytest suite covering store, server, client, CLI
+├── examples/            Memory-augmented chatbot (Anthropic API)
+├── demo/                Terminal demo recording (GIF + VHS tape)
+├── .github/workflows/   GitHub Actions CI
+├── Dockerfile           Container image definition
+├── docker-compose.yml   One-command server startup with volume mount
+├── pyproject.toml       Package metadata and memkit entry-point
+└── requirements.txt     Pinned runtime dependencies
 ```
-
-| Command | Description |
-|---------|-------------|
-| `memkit add <text\|file>` | Store a memory (raw text or Markdown file) |
-| `memkit search <query>` | Semantic search (use `--k N` for top-N results) |
-| `memkit list` | List all memories |
-
-## Python Client
-
-```python
-from memkit import MemKitClient
-
-client = MemKitClient("http://localhost:8000")
-
-# Store a memory
-memory_id = client.add("The user prefers concise answers.")
-
-# Semantic search
-results = client.search("how should I format responses?", k=3)
-for r in results:
-    print(r["score"], r["text"])
-
-# List all
-all_memories = client.list()
-
-# Delete by ID
-client.delete(memory_id)
-```
-
----
-
-## Examples
-
-### Memory-augmented chatbot
-
-`examples/chatbot.py` is a terminal chat loop that retrieves the top-3 relevant
-memories on each turn and injects them as a system prompt before calling the
-Anthropic API.
-
-```bash
-# Seed some memories first
-memkit add "The user's name is Alice."
-memkit add "The user prefers concise, bullet-point answers."
-
-# Run the chatbot (requires a running MemKit server)
-ANTHROPIC_API_KEY=sk-... python examples/chatbot.py
-```
-
-The bot will incorporate stored facts automatically without any manual prompt
-engineering.
-
----
-
-## How It Works
-
-1. **Embed** — incoming text is passed through `all-MiniLM-L6-v2` to produce a 384-dimensional vector.
-2. **Store** — the vector plus original text and YAML front-matter metadata are written to ChromaDB on disk.
-3. **Retrieve** — at query time the same model embeds the query and ChromaDB returns the top-k nearest neighbours by cosine similarity.
-
-Memory snippets are plain Markdown and can include optional YAML front-matter:
-
-```markdown
----
-tags: [preference, tone]
-source: conversation
-created_at: 2026-06-01
----
-User prefers bullet-point answers over long paragraphs.
-```
-
----
 
 ## Roadmap
 
-| Milestone | What ships |
-|-----------|-----------|
-| **M1** ✓ | Scaffold, README, package layout |
-| **M2** ✓ | `MemoryStore`: embed, store, search, list, delete + unit tests |
-| **M3** ✓ | FastAPI server (`server.py`), 5 endpoints, Docker image |
-| **M4** ✓ | CLI (`memkit add/search/list`), `MemKitClient`, chatbot example |
-
----
+- [ ] Async Python client for use inside async agent frameworks
+- [ ] Bulk import from a directory of Markdown files
+- [ ] Optional cross-encoder re-ranking pass for higher-precision retrieval
+- [ ] OpenAI-compatible embedding endpoint for drop-in backend swapping
+- [ ] Minimal web UI for browsing and editing stored memories
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Built autonomously by [autodev](https://github.com/RitikPatill/autodev),
+a multi-agent orchestrator I designed. Each commit in this repo was
+authored by me; the implementation work was performed by Sonnet under
+the orchestrator's control. Read the orchestrator's README to see how.
