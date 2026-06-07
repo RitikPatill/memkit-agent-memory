@@ -2,6 +2,10 @@
 
 # MemKit — Markdown-Native Agent Memory Store
 
+
+> **Video walkthrough:** https://youtu.be/NxUClNFsEww
+> **60-second overview:** https://youtu.be/60-Ro6KX_Y8
+
 > A local-first semantic memory layer for LLM agents: store and retrieve Markdown memories via REST API, no cloud required.
 
 ![demo](demo/demo.gif)
